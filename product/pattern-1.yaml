@@ -492,12 +492,15 @@ Resources:
               pip install boto3
               rpm -Uvh https://yum.puppetlabs.com/puppet5/puppet5-release-el-7.noarch.rpm
               yum install -y puppet-agent
+              export number=$(( ( RANDOM % 10 )  + 1 ))
               echo $'[main]\nserver = puppet\ncertname = agent1\nenvironment = production\n\runinterval = 1h' > /etc/puppetlabs/puppet/puppet.conf
+              sed -i "s/1/$number/g" /etc/puppetlabs/puppet/puppet.conf
           fi
           pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
           sed -i '/\[main\]/a server=puppet' /etc/puppet/puppet.conf
           wget https://s3.amazonaws.com/wso2logarchiever/log_archiver/log_archiver.sh
           wget --no-check-certificate --no-proxy 'http://wso2-cloudformation-templates.s3.amazonaws.com/private_ip_extractor.py' -P /usr/local/bin/
+          wget --no-check-certificate --no-proxy 'http://wso2-cloudformation-templates.s3.amazonaws.com/apim_private_ip_extractor.py' -P /usr/local/bin/
           mv log_archiver.sh /usr/lib/
           export ProductVersion=3.1.0
           sed -i "s/Product_Version/3.1.0/g" /usr/lib/logstash-6.5.1/logstash-APIM.conf
@@ -548,6 +551,15 @@ Resources:
           ln -s /mnt/efs/tenants /usr/lib/wso2/wso2am/3.1.0/wso2am-3.1.0/repository
           echo "${WSO2APIMEFSFileSystem}:/ /mnt/efs efs defaults,_netdev 0 0" >> /etc/fstab
           service puppet stop
+          export MYIP=$(hostname -I | awk '{print $1}')
+          export IPLIST=$(python /usr/local/bin/apim_private_ip_extractor.py ${AWS::Region} ${AWSAccessKeyId} ${AWSAccessKeySecret} '${EnvironmentName} WSO2APIMInstance')
+          export IP1=${IPLIST%,*}
+          export IP2=${IPLIST#*,}
+          if [[ $MYIP == $IP1 ]]; then
+              sed -i "s/OTHERAPIMNODE/$IP2/g" /usr/lib/wso2/wso2am/3.1.0/wso2am-3.1.0/repository/conf/jndi2.properties
+          else
+              sed -i "s/OTHERAPIMNODE/$IP1/g" /usr/lib/wso2/wso2am/3.1.0/wso2am-3.1.0/repository/conf/jndi2.properties
+          fi
           export ANALYTICS_IP=$(python /usr/local/bin/private_ip_extractor.py ${AWS::Region} ${AWSAccessKeyId} ${AWSAccessKeySecret} '${EnvironmentName} WSO2APIMAnalyticsWorker')
           sed -i "s/CF_ANALYTICS_IP/$ANALYTICS_IP/g" /usr/lib/wso2/wso2am/3.1.0/wso2am-3.1.0/repository/conf/deployment.toml
           /usr/lib/wso2/wso2am/3.1.0/wso2am-3.1.0/bin/wso2server.sh start
